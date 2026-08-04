@@ -7,11 +7,16 @@ and move them through it — all started with one command.
 
 ## Run the demo
 
-**Prerequisite:** [Docker Desktop](https://www.docker.com/products/docker-desktop/).
-Install it, then **launch the Docker Desktop app and wait until it reports
-"Engine running"** (steady whale icon in the menu bar / system tray) —
-installed but not running is the most common trip-up. Nothing else is
-needed — no local Python, Node, or PostgreSQL.
+**Prerequisites:**
+
+- [Docker Desktop](https://www.docker.com/products/docker-desktop/).
+  Install it, then **launch the Docker Desktop app and wait until it reports
+  "Engine running"** (steady whale icon in the menu bar / system tray) —
+  installed but not running is the most common trip-up.
+- An internet connection that can reach Docker Hub, PyPI and npm
+  (first start only; later starts are fully offline).
+
+Nothing else is needed — no local Python, Node, or PostgreSQL.
 
 ```bash
 git clone <this-repo>
@@ -52,11 +57,9 @@ docker compose down -v && docker compose up
   change the left-hand side of the `ports:` mapping in `docker-compose.yml`.
 - **First start looks stuck** — it is almost certainly downloading images /
   npm packages. Watch progress with `docker compose logs -f`.
-- **Image pulls time out (`TLS handshake timeout`)** — some networks block
-  Docker Hub. Run the optional fallback script, which retries via community
-  mirrors and re-tags to the official names, then start normally:
-  `./scripts/pull-images.sh` (macOS/Linux) or
-  `.\scripts\pull-images.ps1` (Windows PowerShell), followed by
+- **Image pulls time out (`TLS handshake timeout`)** — your network cannot
+  reach Docker Hub (common behind restrictive networks/firewalls). Connect
+  via a network or VPN with unrestricted access and re-run
   `docker compose up`.
 
 ## The status lifecycle
