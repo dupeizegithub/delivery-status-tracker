@@ -124,7 +124,7 @@ docker compose up
   no dev servers) is on the "next" list.
 - **Schema owned by SQL, no ORM.** `db/init/*.sql` is the single source of
   truth, applied by the Postgres image's init mechanism; the API uses
-  parameterized SQL via psycopg. Two endpoints and five queries don't
+  parameterized SQL via psycopg. A handful of endpoints and queries don't
   justify an ORM, and the schema stays reviewable in one file.
 - **Status is a Postgres `ENUM`**, so the database rejects unknown values
   regardless of application bugs.
@@ -134,8 +134,8 @@ docker compose up
   "current column + event log" pattern used by carrier tracking APIs).
   That dual-write covers the update path (create/delete are out of scope
   per the brief). Seeded rows get one honest "entered the system at this
-  status" event — no invented history. There is no history UI yet, by
-  choice: it is the natural next feature to build on this table.
+  status" event — no invented history. The UI surfaces that table as a
+  per-row expandable History panel via `GET .../events`.
 - **Transitions validated in one place** (`backend/app/lifecycle.py`, a pure
   dict — trivially unit-testable). The status *vocabulary* is defended in
   two layers on purpose: a Postgres `ENUM` and the Python `STATUSES` list,
@@ -170,12 +170,13 @@ docker compose up
   `(current, target)` pair by exhaustion, plus assertions that terminal
   states have no next step and that every status has a transitions entry
   (so a forgotten map entry cannot silently look terminal).
-- **API tests (10)** — list endpoint; `?status=` filter; history endpoint;
-  a valid update (checks the history row is written too); an invalid
-  update (409, clear message, state untouched); unknown reference (404);
-  unknown status (422); Python `STATUSES` matches the Postgres `ENUM`;
-  OpenAPI documents 404/409 for the update endpoint. Tests create and
-  clean up their own `TEST-…` shipments, so demo data stays pristine.
+- **API tests (10)** — list endpoint; `?status=` filter; history endpoint
+  plus its 404; a valid update (checks the history row is written too);
+  an invalid update (409, clear message, state untouched); unknown
+  reference (404); unknown status (422); Python `STATUSES` matches the
+  Postgres `ENUM`; OpenAPI documents 404/409 for the update endpoint.
+  Tests create and clean up their own `TEST-…` shipments, so demo data
+  stays pristine.
 
 ## What I'd do next
 

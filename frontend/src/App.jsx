@@ -24,9 +24,11 @@ export default function App() {
     fetchShipments().then(setShipments).catch((e) => setError(e.message));
   }, []);
 
-  async function loadHistory(reference) {
+  async function loadHistory(reference, { clearError = false } = {}) {
     setHistoryBusy(reference);
-    setError(null);
+    // Do not clear by default: the 409 failure path calls this after
+    // setError(...), and wiping the banner here would hide the conflict.
+    if (clearError) setError(null);
     try {
       const events = await fetchStatusEvents(reference);
       setHistoryByRef((prev) => ({ ...prev, [reference]: events }));
@@ -44,7 +46,7 @@ export default function App() {
     }
     setExpandedRef(reference);
     if (!historyByRef[reference]) {
-      await loadHistory(reference);
+      await loadHistory(reference, { clearError: true });
     }
   }
 
@@ -65,6 +67,14 @@ export default function App() {
         setShipments(await fetchShipments());
       } catch {
         // Keep the error banner; a failed refetch is secondary.
+      }
+      // Keep an open/cached history panel aligned after concurrent 409s.
+      if (expandedRef === reference || historyByRef[reference]) {
+        try {
+          await loadHistory(reference);
+        } catch {
+          // Banner already shows the primary error.
+        }
       }
     } finally {
       setBusyRef(null);
@@ -165,9 +175,11 @@ export default function App() {
                         {historyBusy === s.reference &&
                         !historyByRef[s.reference] ? (
                           <p className="muted">Loading history…</p>
+                        ) : (historyByRef[s.reference] || []).length === 0 ? (
+                          <p className="muted">No history yet.</p>
                         ) : (
                           <ol className="history-list">
-                            {(historyByRef[s.reference] || []).map((ev, i) => (
+                            {historyByRef[s.reference].map((ev, i) => (
                               <li key={`${ev.occurred_at}-${i}`}>
                                 <span className="history-step">
                                   {ev.from_status
