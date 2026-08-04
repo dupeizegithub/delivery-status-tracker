@@ -27,11 +27,7 @@ def shipment():
         )
     yield reference
     with get_pool().connection() as conn:
-        conn.execute(
-            "DELETE FROM shipment_status_events WHERE shipment_id = "
-            "(SELECT id FROM shipments WHERE reference = %s)",
-            (reference,),
-        )
+        # ON DELETE CASCADE clears shipment_status_events with the parent row.
         conn.execute("DELETE FROM shipments WHERE reference = %s", (reference,))
 
 

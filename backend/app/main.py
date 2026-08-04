@@ -101,7 +101,10 @@ def update_status(reference: str, body: StatusUpdate):
             # Raising inside the `connection()` block rolls the transaction back.
             raise HTTPException(
                 status_code=409,
-                detail=f"Shipment '{reference}' was updated concurrently. Reload and retry.",
+                detail=(
+                    f"Shipment '{reference}' was updated concurrently. "
+                    "Retry with the latest status."
+                ),
             )
 
         # Same transaction as the UPDATE: on the status-update path, history

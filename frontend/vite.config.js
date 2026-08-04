@@ -8,6 +8,12 @@ export default defineConfig({
   plugins: [react()],
   server: {
     host: true,
+    // Polling is more reliable than inotify for bind-mounted sources under
+    // Docker Desktop (macOS/Windows); slightly slower, much more consistent.
+    watch: {
+      usePolling: true,
+      interval: 500,
+    },
     proxy: {
       "/api": {
         target: process.env.API_PROXY_TARGET || "http://localhost:8001",

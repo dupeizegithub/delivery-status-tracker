@@ -23,6 +23,9 @@ services:
     build: ./backend
     environment:
       DATABASE_URL: postgresql://tracker:tracker@db:5432/tracker
+      # Docker Desktop file-event forwarding can miss bind-mount writes;
+      # polling keeps --reload reliable for live interview edits.
+      WATCHFILES_FORCE_POLLING: "true"
     ports:
       # 8001 on the host: 8000 is a very common dev port, avoid clashes.
       - "8001:8000"
@@ -35,12 +38,26 @@ services:
         # Wait for pg_isready, not merely for the container to exist —
         # otherwise the API races the DB on first start and crashes.
         condition: service_healthy
+    healthcheck:
+      # /api/health is the readiness signal so `web` does not serve the UI
+      # before uvicorn is actually accepting requests.
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health')\"",
+        ]
+      interval: 2s
+      timeout: 2s
+      retries: 15
+      start_period: 5s
 
   web:
     build: ./frontend
     environment:
       # Vite proxies /api here, over the compose-internal network.
       API_PROXY_TARGET: http://api:8000
+      # Same polling rationale as the API: bind-mount HMR on Docker Desktop.
+      CHOKIDAR_USEPOLLING: "true"
     ports:
       # 5174 on the host: 5173 is Vite's default and often already taken.
       - "5174:5173"
@@ -50,7 +67,8 @@ services:
       - ./frontend:/app
       - /app/node_modules
     depends_on:
-      - api
+      api:
+        condition: service_healthy
 
 volumes:
   db_data:

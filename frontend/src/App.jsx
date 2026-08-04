@@ -32,6 +32,13 @@ export default function App() {
       );
     } catch (e) {
       setError(e.message);
+      // On conflict/errors, resync from the server so the table matches the
+      // DB without a full page reload (covers concurrent 409s).
+      try {
+        setShipments(await fetchShipments());
+      } catch {
+        // Keep the error banner; a failed refetch is secondary.
+      }
     } finally {
       setBusyRef(null);
     }

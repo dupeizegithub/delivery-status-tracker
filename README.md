@@ -100,8 +100,8 @@ curl -i -X PATCH localhost:8001/api/shipments/TV-1002/status \
 ```
 docker compose up
 ├── db   — postgres:16; schema + CSV seed auto-applied on first start
-├── api  — FastAPI (python:3.12); talks to db, enforces the lifecycle
-└── web  — React + Vite dev server (node:22); proxies /api to the backend
+├── api  — FastAPI (python:3.12); waits for db healthy, exposes /api/health
+└── web  — React + Vite; waits for api healthy, then proxies /api
 ```
 
 ## Key decisions
@@ -115,8 +115,10 @@ docker compose up
 - **Dev-mode containers, deliberately.** The API runs `uvicorn --reload` and
   the web container runs the Vite dev server with sources bind-mounted:
   this demo's stated purpose is to be extended live in the interview, so
-  hot reload beats a production build. Productionizing (multi-stage build,
-  nginx, no dev servers) is on the "next" list.
+  hot reload beats a production build. File watching uses polling
+  (`WATCHFILES_FORCE_POLLING` / Vite `usePolling`) so bind-mount edits stay
+  reliable under Docker Desktop. Productionizing (multi-stage build, nginx,
+  no dev servers) is on the "next" list.
 - **Schema owned by SQL, no ORM.** `db/init/*.sql` is the single source of
   truth, applied by the Postgres image's init mechanism; the API uses
   parameterized SQL via psycopg. Two endpoints and five queries don't

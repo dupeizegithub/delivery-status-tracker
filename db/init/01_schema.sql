@@ -29,7 +29,10 @@ CREATE TABLE shipments (
 -- same transaction, so the two can never drift apart.
 CREATE TABLE shipment_status_events (
     id          BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    shipment_id BIGINT NOT NULL REFERENCES shipments (id),
+    -- CASCADE: deleting a shipment removes its history with it. Create/delete
+    -- APIs are out of scope for the demo; this mainly keeps test cleanup and
+    -- any future delete path from needing two-step deletes.
+    shipment_id BIGINT NOT NULL REFERENCES shipments (id) ON DELETE CASCADE,
     from_status shipment_status,           -- NULL = initial state (seeded)
     to_status   shipment_status NOT NULL,
     occurred_at TIMESTAMPTZ NOT NULL DEFAULT now()
