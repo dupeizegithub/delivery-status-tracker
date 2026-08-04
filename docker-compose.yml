@@ -1,0 +1,56 @@
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: tracker
+      POSTGRES_PASSWORD: tracker
+      POSTGRES_DB: tracker
+    ports:
+      # 5433 on the host to avoid clashing with a locally installed Postgres.
+      - "5433:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+      # Schema + seed run automatically on first start with a fresh volume.
+      - ./db/init:/docker-entrypoint-initdb.d:ro
+      - ./db/data:/seed:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tracker -d tracker"]
+      interval: 2s
+      timeout: 2s
+      retries: 15
+
+  api:
+    build: ./backend
+    environment:
+      DATABASE_URL: postgresql://tracker:tracker@db:5432/tracker
+    ports:
+      # 8001 on the host: 8000 is a very common dev port, avoid clashes.
+      - "8001:8000"
+    volumes:
+      # Mount source for uvicorn --reload: edits apply without a rebuild.
+      - ./backend/app:/srv/app
+      - ./backend/tests:/srv/tests
+    depends_on:
+      db:
+        # Wait for pg_isready, not merely for the container to exist —
+        # otherwise the API races the DB on first start and crashes.
+        condition: service_healthy
+
+  web:
+    build: ./frontend
+    environment:
+      # Vite proxies /api here, over the compose-internal network.
+      API_PROXY_TARGET: http://api:8000
+    ports:
+      # 5174 on the host: 5173 is Vite's default and often already taken.
+      - "5174:5173"
+    volumes:
+      # Mount source for hot reload, but keep the image's node_modules
+      # (the anonymous volume masks it from the bind mount).
+      - ./frontend:/app
+      - /app/node_modules
+    depends_on:
+      - api
+
+volumes:
+  db_data:
