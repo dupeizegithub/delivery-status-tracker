@@ -52,6 +52,12 @@ docker compose down -v && docker compose up
   change the left-hand side of the `ports:` mapping in `docker-compose.yml`.
 - **First start looks stuck** — it is almost certainly downloading images /
   npm packages. Watch progress with `docker compose logs -f`.
+- **Image pulls time out (`TLS handshake timeout`)** — some networks block
+  Docker Hub. Run the optional fallback script, which retries via community
+  mirrors and re-tags to the official names, then start normally:
+  `./scripts/pull-images.sh` (macOS/Linux) or
+  `.\scripts\pull-images.ps1` (Windows PowerShell), followed by
+  `docker compose up`.
 
 ## The status lifecycle
 
