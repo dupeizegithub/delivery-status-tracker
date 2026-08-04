@@ -204,3 +204,26 @@ challenged designs, and verified everything by running it.
 3. **No timestamp sanity constraint** — nothing stopped `updated_at` from
    preceding `created_at`. I asked for a database-level guard; we added
    `CHECK (updated_at >= created_at)`.
+4. **README drifted from reality** — it claimed lifecycle tests were
+   "32 cases" (that was the whole suite), said versions were "pinned"
+   (they are major-line tags, not digests), and left a CORS comment
+   describing cross-origin browser traffic that the Vite proxy had already
+   made same-origin. Caught by reading the README against `pytest` output
+   and the request path in `api.js`; wording and comments were corrected.
+5. **Swagger looked empty while README pointed reviewers at `/docs`** —
+   no `response_model`, free-form `status` string, and no 404/409 in the
+   OpenAPI surface. Caught by opening `/docs` after the first demo run;
+   fixed with `Literal` statuses, response models, and explicit error
+   responses.
+6. **Startup race and live-edit fragility** — `web` only waited for the
+   api *container*, not for uvicorn to accept traffic; `/api/health`
+   existed but was unused. Hot reload relied on inotify, which Docker
+   Desktop often drops on bind mounts. Caught when reasoning about cold
+   start and interview-time edits; fixed with an api healthcheck +
+   `service_healthy` dependency, plus polling-based file watchers.
+7. **FK defaulted to `NO ACTION` and 409s left the UI stale** — history
+   rows blocked a one-step delete (visible in the test fixture), and a
+   concurrent 409 only showed an error banner telling the user to reload.
+   Caught on review of the schema and the conflict path; switched to
+   `ON DELETE CASCADE` and refetch-on-error so the table resyncs without
+   a full page reload.
