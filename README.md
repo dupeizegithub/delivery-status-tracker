@@ -7,9 +7,11 @@ and move them through it — all started with one command.
 
 ## Run the demo
 
-**Prerequisite:** [Docker Desktop](https://www.docker.com/products/docker-desktop/)
-installed and running (green whale icon in the menu bar / system tray).
-Nothing else is needed — no local Python, Node, or PostgreSQL.
+**Prerequisite:** [Docker Desktop](https://www.docker.com/products/docker-desktop/).
+Install it, then **launch the Docker Desktop app and wait until it reports
+"Engine running"** (steady whale icon in the menu bar / system tray) —
+installed but not running is the most common trip-up. Nothing else is
+needed — no local Python, Node, or PostgreSQL.
 
 ```bash
 git clone <this-repo>
@@ -41,6 +43,10 @@ docker compose down -v && docker compose up
 
 ### Troubleshooting
 
+- **`unable to get image …: failed to connect to the docker API` /
+  `Cannot connect to the Docker daemon`** — Docker Desktop isn't running.
+  Start the app and wait for the whale icon to settle, then re-run
+  `docker compose up`.
 - **A port is already in use** — the demo uses 5174 (web), 8001 (API) and
   5433 (Postgres), chosen to avoid common dev ports. If one still clashes,
   change the left-hand side of the `ports:` mapping in `docker-compose.yml`.
