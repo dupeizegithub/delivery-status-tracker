@@ -1,0 +1,118 @@
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+
+from .db import get_pool
+from .lifecycle import STATUSES, allowed_next, is_valid_transition
+
+app = FastAPI(title="Delivery Status Tracker API")
+
+# The React dev server runs on another port, so the browser treats API calls
+# as cross-origin. Wide-open CORS is fine for a local demo with no auth.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+SHIPMENT_COLUMNS = "reference, customer_name, status, created_at, updated_at"
+
+
+class StatusUpdate(BaseModel):
+    status: str
+
+
+@app.get("/api/health")
+def health():
+    return {"ok": True}
+
+
+@app.get("/api/shipments")
+def list_shipments():
+    with get_pool().connection() as conn:
+        rows = conn.execute(
+            f"SELECT {SHIPMENT_COLUMNS} FROM shipments ORDER BY reference"
+        ).fetchall()
+    return [_serialize(r) for r in rows]
+
+
+@app.patch("/api/shipments/{reference}/status")
+def update_status(reference: str, body: StatusUpdate):
+    target = body.status
+    if target not in STATUSES:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Unknown status '{target}'. Valid statuses: {', '.join(STATUSES)}.",
+        )
+
+    with get_pool().connection() as conn:
+        row = conn.execute(
+            "SELECT id, status FROM shipments WHERE reference = %s", (reference,)
+        ).fetchone()
+        if row is None:
+            raise HTTPException(
+                status_code=404, detail=f"Shipment '{reference}' not found."
+            )
+        shipment_id, current = row
+
+        if not is_valid_transition(current, target):
+            raise HTTPException(status_code=409, detail=_transition_error(current, target))
+
+        # The status predicate doubles as an optimistic lock: if a concurrent
+        # request already moved this shipment on, we match zero rows instead
+        # of silently overwriting its transition.
+        updated = conn.execute(
+            """
+            UPDATE shipments
+            SET status = %s, updated_at = now()
+            WHERE id = %s AND status = %s
+            RETURNING reference, customer_name, status, created_at, updated_at
+            """,
+            (target, shipment_id, current),
+        ).fetchone()
+        if updated is None:
+            # Raising inside the `connection()` block rolls the transaction back.
+            raise HTTPException(
+                status_code=409,
+                detail=f"Shipment '{reference}' was updated concurrently. Reload and retry.",
+            )
+
+        # Same transaction as the UPDATE: history and current status can
+        # never drift apart.
+        conn.execute(
+            """
+            INSERT INTO shipment_status_events (shipment_id, from_status, to_status)
+            VALUES (%s, %s, %s)
+            """,
+            (shipment_id, current, target),
+        )
+
+    return _serialize(updated)
+
+
+def _transition_error(current: str, target: str) -> str:
+    nexts = allowed_next(current)
+    if not nexts:
+        return (
+            f"Cannot change status of a shipment that is '{current}': "
+            "it is a terminal state."
+        )
+    return (
+        f"Cannot transition from '{current}' to '{target}'. "
+        f"Allowed next status(es): {', '.join(nexts)}."
+    )
+
+
+def _serialize(row) -> dict:
+    reference, customer_name, status, created_at, updated_at = row
+    return {
+        "reference": reference,
+        "customer_name": customer_name,
+        "status": status,
+        "created_at": created_at,
+        "updated_at": updated_at,
+        # The UI renders its action buttons from this, so the transition
+        # rules live in exactly one place (this backend module).
+        "allowed_next": allowed_next(status),
+    }
