@@ -40,3 +40,9 @@ export async function updateStatus(reference, status) {
     })
   );
 }
+
+export async function fetchStatusEvents(reference) {
+  return parseOrThrow(
+    await fetch(`/api/shipments/${encodeURIComponent(reference)}/events`)
+  );
+}

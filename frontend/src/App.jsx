@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { fetchShipments, updateStatus } from "./api.js";
+import { Fragment, useEffect, useState } from "react";
+import { fetchShipments, fetchStatusEvents, updateStatus } from "./api.js";
 
 const STATUS_LABELS = {
   created: "Created",
@@ -16,24 +16,51 @@ export default function App() {
   const [error, setError] = useState(null);
   const [busyRef, setBusyRef] = useState(null);
   const [filter, setFilter] = useState("all");
+  const [expandedRef, setExpandedRef] = useState(null);
+  const [historyByRef, setHistoryByRef] = useState({});
+  const [historyBusy, setHistoryBusy] = useState(null);
 
   useEffect(() => {
     fetchShipments().then(setShipments).catch((e) => setError(e.message));
   }, []);
+
+  async function loadHistory(reference) {
+    setHistoryBusy(reference);
+    setError(null);
+    try {
+      const events = await fetchStatusEvents(reference);
+      setHistoryByRef((prev) => ({ ...prev, [reference]: events }));
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setHistoryBusy(null);
+    }
+  }
+
+  async function toggleHistory(reference) {
+    if (expandedRef === reference) {
+      setExpandedRef(null);
+      return;
+    }
+    setExpandedRef(reference);
+    if (!historyByRef[reference]) {
+      await loadHistory(reference);
+    }
+  }
 
   async function handleUpdate(reference, status) {
     setBusyRef(reference);
     setError(null);
     try {
       const updated = await updateStatus(reference, status);
-      // Swap the one changed row in place — no reload, no full refetch.
       setShipments((rows) =>
         rows.map((r) => (r.reference === reference ? updated : r))
       );
+      if (expandedRef === reference || historyByRef[reference]) {
+        await loadHistory(reference);
+      }
     } catch (e) {
       setError(e.message);
-      // On conflict/errors, resync from the server so the table matches the
-      // DB without a full page reload (covers concurrent 409s).
       try {
         setShipments(await fetchShipments());
       } catch {
@@ -98,35 +125,67 @@ export default function App() {
             {shipments
               .filter((s) => filter === "all" || s.status === filter)
               .map((s) => (
-              <tr key={s.reference}>
-                <td className="ref">{s.reference}</td>
-                <td>{s.customer_name}</td>
-                <td>
-                  <span className={`badge badge-${s.status}`}>
-                    {STATUS_LABELS[s.status]}
-                  </span>
-                </td>
-                <td className="muted">
-                  {new Date(s.updated_at).toLocaleString()}
-                </td>
-                <td className="actions">
-                  {s.allowed_next.length === 0 ? (
-                    <span className="muted">—</span>
-                  ) : (
-                    s.allowed_next.map((next) => (
+                <Fragment key={s.reference}>
+                  <tr>
+                    <td className="ref">{s.reference}</td>
+                    <td>{s.customer_name}</td>
+                    <td>
+                      <span className={`badge badge-${s.status}`}>
+                        {STATUS_LABELS[s.status]}
+                      </span>
+                    </td>
+                    <td className="muted">
+                      {new Date(s.updated_at).toLocaleString()}
+                    </td>
+                    <td className="actions">
                       <button
-                        key={next}
-                        className={`btn ${next === "failed" ? "btn-danger" : "btn-primary"}`}
-                        disabled={busyRef === s.reference}
-                        onClick={() => handleUpdate(s.reference, next)}
+                        className="btn btn-ghost"
+                        disabled={historyBusy === s.reference}
+                        onClick={() => toggleHistory(s.reference)}
                       >
-                        {STATUS_LABELS[next]}
+                        {expandedRef === s.reference ? "Hide history" : "History"}
                       </button>
-                    ))
+                      {s.allowed_next.length === 0
+                        ? null
+                        : s.allowed_next.map((next) => (
+                            <button
+                              key={next}
+                              className={`btn ${next === "failed" ? "btn-danger" : "btn-primary"}`}
+                              disabled={busyRef === s.reference}
+                              onClick={() => handleUpdate(s.reference, next)}
+                            >
+                              {STATUS_LABELS[next]}
+                            </button>
+                          ))}
+                    </td>
+                  </tr>
+                  {expandedRef === s.reference && (
+                    <tr className="history-row">
+                      <td colSpan={5}>
+                        {historyBusy === s.reference &&
+                        !historyByRef[s.reference] ? (
+                          <p className="muted">Loading history…</p>
+                        ) : (
+                          <ol className="history-list">
+                            {(historyByRef[s.reference] || []).map((ev, i) => (
+                              <li key={`${ev.occurred_at}-${i}`}>
+                                <span className="history-step">
+                                  {ev.from_status
+                                    ? `${STATUS_LABELS[ev.from_status]} → ${STATUS_LABELS[ev.to_status]}`
+                                    : `Entered as ${STATUS_LABELS[ev.to_status]}`}
+                                </span>
+                                <span className="muted">
+                                  {new Date(ev.occurred_at).toLocaleString()}
+                                </span>
+                              </li>
+                            ))}
+                          </ol>
+                        )}
+                      </td>
+                    </tr>
                   )}
-                </td>
-              </tr>
-            ))}
+                </Fragment>
+              ))}
           </tbody>
         </table>
       )}

@@ -39,6 +39,33 @@ def test_list_shipments_includes_status(shipment):
     assert by_ref[shipment]["customer_name"] == "Test Customer"
 
 
+def test_list_shipments_can_filter_by_status(shipment):
+    created = client.get("/api/shipments", params={"status": "created"}).json()
+    assert all(s["status"] == "created" for s in created)
+    assert any(s["reference"] == shipment for s in created)
+
+    delivered = client.get("/api/shipments", params={"status": "delivered"}).json()
+    assert all(s["status"] == "delivered" for s in delivered)
+    assert all(s["reference"] != shipment for s in delivered)
+
+
+def test_status_history_endpoint(shipment):
+    # Seed-style fixture has no initial event; after a transition, history appears.
+    assert client.get(f"/api/shipments/{shipment}/events").json() == []
+
+    client.patch(f"/api/shipments/{shipment}/status", json={"status": "picked_up"})
+    events = client.get(f"/api/shipments/{shipment}/events").json()
+    assert len(events) == 1
+    assert events[0]["from_status"] == "created"
+    assert events[0]["to_status"] == "picked_up"
+    assert "occurred_at" in events[0]
+
+
+def test_status_history_unknown_shipment_404():
+    resp = client.get("/api/shipments/NOPE-1/events")
+    assert resp.status_code == 404
+
+
 def test_valid_transition_updates_status_and_history(shipment):
     resp = client.patch(
         f"/api/shipments/{shipment}/status", json={"status": "picked_up"}

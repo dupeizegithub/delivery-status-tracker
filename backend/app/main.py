@@ -26,6 +26,12 @@ class ShipmentOut(BaseModel):
     allowed_next: list[StatusLiteral]
 
 
+class StatusEventOut(BaseModel):
+    from_status: StatusLiteral | None
+    to_status: StatusLiteral
+    occurred_at: datetime
+
+
 app = FastAPI(title="Delivery Status Tracker API")
 
 # Browser traffic from the React app is same-origin via the Vite /api proxy,
@@ -48,12 +54,56 @@ def health():
 
 
 @app.get("/api/shipments", response_model=list[ShipmentOut])
-def list_shipments():
+def list_shipments(status: StatusLiteral | None = None):
+    """List shipments. Optional `status` query filters server-side; the UI
+    also filters client-side so chip counts stay live as rows change."""
     with get_pool().connection() as conn:
-        rows = conn.execute(
-            f"SELECT {SHIPMENT_COLUMNS} FROM shipments ORDER BY reference"
-        ).fetchall()
+        if status is None:
+            rows = conn.execute(
+                f"SELECT {SHIPMENT_COLUMNS} FROM shipments ORDER BY reference"
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                f"SELECT {SHIPMENT_COLUMNS} FROM shipments "
+                "WHERE status = %s ORDER BY reference",
+                (status,),
+            ).fetchall()
     return [_serialize(r) for r in rows]
+
+
+@app.get(
+    "/api/shipments/{reference}/events",
+    response_model=list[StatusEventOut],
+    responses={404: {"description": "Shipment reference not found"}},
+)
+def list_status_events(reference: str):
+    with get_pool().connection() as conn:
+        row = conn.execute(
+            "SELECT id FROM shipments WHERE reference = %s", (reference,)
+        ).fetchone()
+        if row is None:
+            raise HTTPException(
+                status_code=404, detail=f"Shipment '{reference}' not found."
+            )
+        (shipment_id,) = row
+        # Tie-break on id so seed rows that share the same now() stay ordered.
+        events = conn.execute(
+            """
+            SELECT from_status, to_status, occurred_at
+            FROM shipment_status_events
+            WHERE shipment_id = %s
+            ORDER BY occurred_at, id
+            """,
+            (shipment_id,),
+        ).fetchall()
+    return [
+        {
+            "from_status": from_status,
+            "to_status": to_status,
+            "occurred_at": occurred_at,
+        }
+        for from_status, to_status, occurred_at in events
+    ]
 
 
 @app.patch(

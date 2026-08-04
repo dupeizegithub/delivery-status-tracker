@@ -33,9 +33,10 @@ minutes. Subsequent starts take seconds. When the log settles, open:
 - **Web UI: http://localhost:5174**
 - API docs (Swagger): http://localhost:8001/docs
 
-You should see 20 shipments with colored status badges, filter chips above
-the table, and action buttons that move each shipment through its lifecycle.
-Status changes apply instantly, without a page reload.
+You should see 20 shipments with colored status badges, status filter chips
+above the table, a History button per row, and action buttons that move each
+shipment through its lifecycle. Status changes apply instantly, without a
+page reload; expanding History shows the append-only event timeline.
 
 Run the tests (with the stack up):
 
@@ -81,7 +82,9 @@ error that names the allowed next statuses.
 
 - `GET /api/shipments` — all shipments with current status and
   `allowed_next` (the UI renders its buttons from this, so transition rules
-  live in exactly one place).
+  live in exactly one place). Optional `?status=` filters server-side.
+- `GET /api/shipments/{reference}/events` — append-only status history for
+  one shipment (`from_status` is null for the seeded "entered as" event).
 - `PATCH /api/shipments/{reference}/status` with `{"status": "picked_up"}` —
   update a shipment's status.
   - `409` invalid transition (message includes what *is* allowed)
@@ -140,9 +143,11 @@ docker compose up
   allowed (`allowed_next`), and the update statement's
   `WHERE status = <expected>` doubles as an optimistic lock against
   concurrent updates.
-- **Client-side filtering.** With 20 rows, filtering in the browser is
-  instant and keeps counts live as statuses change; pushing filtering into
-  SQL (`?status=`) becomes worthwhile with real data volumes.
+- **Status filter + history (stretch goals).** The UI filters with chips
+  (client-side, so counts stay live as rows change); the list API also
+  accepts `?status=` for server-side filtering. History is a per-row
+  expandable panel backed by `GET .../events` — the event table was written
+  from day one, so this was mostly wiring.
 - **Uncommon host ports** (5174 / 8001 / 5433) to avoid colliding with
   whatever the reviewer already runs.
 
@@ -159,29 +164,27 @@ docker compose up
 
 ## Tests
 
-`docker compose exec api pytest` runs (35 cases at last count):
+`docker compose exec api pytest` runs (38 cases at last count):
 
 - **Lifecycle unit tests (28)** — every valid transition and every invalid
   `(current, target)` pair by exhaustion, plus assertions that terminal
   states have no next step and that every status has a transitions entry
   (so a forgotten map entry cannot silently look terminal).
-- **API tests (7)** — list endpoint; a valid update (checks the history row
-  is written too); an invalid update (409, clear message, state untouched);
-  unknown reference (404); unknown status (422); Python `STATUSES` matches
-  the Postgres `ENUM`; OpenAPI documents 404/409 for the update endpoint.
-  Tests create and clean up their own `TEST-…` shipments, so demo data
-  stays pristine.
+- **API tests (10)** — list endpoint; `?status=` filter; history endpoint;
+  a valid update (checks the history row is written too); an invalid
+  update (409, clear message, state untouched); unknown reference (404);
+  unknown status (422); Python `STATUSES` matches the Postgres `ENUM`;
+  OpenAPI documents 404/409 for the update endpoint. Tests create and
+  clean up their own `TEST-…` shipments, so demo data stays pristine.
 
 ## What I'd do next
 
-1. Status-history endpoint + expandable row in the UI (the table and data
-   are already there).
-2. Server-side filtering/pagination once data volume justifies it.
-3. Production build path: multi-stage frontend build behind nginx, uvicorn
+1. Pagination / search once data volume justifies it.
+2. Production build path: multi-stage frontend build behind nginx, uvicorn
    without `--reload`, non-root containers.
-4. Commit a `package-lock.json` (npm resolves within pinned ranges today).
-5. DB-level guard (trigger) for transitions as defense-in-depth.
-6. CI: run pytest + a compose smoke test on every push.
+3. Commit a `package-lock.json` (npm resolves within pinned ranges today).
+4. DB-level guard (trigger) for transitions as defense-in-depth.
+5. CI: run pytest + a compose smoke test on every push.
 
 ## AI-usage note
 
