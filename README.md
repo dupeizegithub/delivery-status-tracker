@@ -24,6 +24,9 @@ cd delivery-tracker
 docker compose up
 ```
 
+Built in about 3.5 hours within the brief's timebox (see "What I'd do next"
+for what was cut).
+
 The first start downloads base images and installs dependencies — allow a few
 minutes. Subsequent starts take seconds. When the log settles, open:
 
@@ -105,8 +108,10 @@ docker compose up
 
 - **Docker Compose for everything.** The brief guarantees nothing about the
   reviewer's machine. All three services run in containers, so the only
-  prerequisite is Docker itself, and versions are pinned (`postgres:16`,
-  `python:3.12`, `node:22`) — the same stack runs everywhere.
+  prerequisite is Docker itself. Image tags lock the major line
+  (`postgres:16`, `python:3.12-slim`, `node:22-alpine`); patch releases can
+  float. Dependency ranges are constrained in `requirements.txt` /
+  `package.json` (lockfiles are on the "next" list).
 - **Dev-mode containers, deliberately.** The API runs `uvicorn --reload` and
   the web container runs the Vite dev server with sources bind-mounted:
   this demo's stated purpose is to be extended live in the interview, so
@@ -119,15 +124,18 @@ docker compose up
 - **Status is a Postgres `ENUM`**, so the database rejects unknown values
   regardless of application bugs.
 - **Status history from day one.** `shipments.status` is the fast
-  operational read; every transition also appends to
+  operational read; every status update also appends to
   `shipment_status_events` in the same transaction (the standard
   "current column + event log" pattern used by carrier tracking APIs).
-  Seeded rows get one honest "entered the system at this status" event —
-  no invented history. There is no history UI yet, by choice: it is the
-  natural next feature to build on this table.
+  That dual-write covers the update path (create/delete are out of scope
+  per the brief). Seeded rows get one honest "entered the system at this
+  status" event — no invented history. There is no history UI yet, by
+  choice: it is the natural next feature to build on this table.
 - **Transitions validated in one place** (`backend/app/lifecycle.py`, a pure
-  dict — trivially unit-testable). The UI only *renders* what the API says
-  is allowed (`allowed_next`), and the update statement's
+  dict — trivially unit-testable). The status *vocabulary* is defended in
+  two layers on purpose: a Postgres `ENUM` and the Python `STATUSES` list,
+  kept in lockstep by a test. The UI only *renders* what the API says is
+  allowed (`allowed_next`), and the update statement's
   `WHERE status = <expected>` doubles as an optimistic lock against
   concurrent updates.
 - **Client-side filtering.** With 20 rows, filtering in the browser is
@@ -149,14 +157,18 @@ docker compose up
 
 ## Tests
 
-`docker compose exec api pytest` runs:
+`docker compose exec api pytest` runs (35 cases at last count):
 
-- **Lifecycle unit tests** — every valid transition, and *every* invalid
-  (current, target) pair by exhaustion (32 cases total).
-- **API tests** — list endpoint; a valid update (checks the history row is
-  written too); an invalid update (409, clear message, state untouched);
-  unknown reference (404); unknown status (422). Tests create and clean up
-  their own `TEST-…` shipments, so demo data stays pristine.
+- **Lifecycle unit tests (28)** — every valid transition and every invalid
+  `(current, target)` pair by exhaustion, plus assertions that terminal
+  states have no next step and that every status has a transitions entry
+  (so a forgotten map entry cannot silently look terminal).
+- **API tests (7)** — list endpoint; a valid update (checks the history row
+  is written too); an invalid update (409, clear message, state untouched);
+  unknown reference (404); unknown status (422); Python `STATUSES` matches
+  the Postgres `ENUM`; OpenAPI documents 404/409 for the update endpoint.
+  Tests create and clean up their own `TEST-…` shipments, so demo data
+  stays pristine.
 
 ## What I'd do next
 

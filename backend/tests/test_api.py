@@ -10,6 +10,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.db import get_pool
+from app.lifecycle import STATUSES
 from app.main import app
 
 client = TestClient(app)
@@ -81,3 +82,30 @@ def test_unknown_shipment_404():
 def test_unknown_status_422(shipment):
     resp = client.patch(f"/api/shipments/{shipment}/status", json={"status": "lost"})
     assert resp.status_code == 422
+
+
+def test_python_statuses_match_postgres_enum():
+    """The SQL ENUM and lifecycle.STATUSES must stay in lockstep — two
+    layers of validation, one shared vocabulary."""
+    with get_pool().connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT e.enumlabel
+            FROM pg_enum e
+            JOIN pg_type t ON t.oid = e.enumtypid
+            WHERE t.typname = 'shipment_status'
+            ORDER BY e.enumsortorder
+            """
+        ).fetchall()
+    assert [r[0] for r in rows] == STATUSES
+
+
+def test_openapi_documents_conflict_and_not_found():
+    spec = client.get("/openapi.json").json()
+    patch = spec["paths"]["/api/shipments/{reference}/status"]["patch"]
+    assert "409" in patch["responses"]
+    assert "404" in patch["responses"]
+    # Status must not be an unconstrained free-form string in the docs.
+    dumped = str(spec)
+    assert "picked_up" in dumped
+    assert '"type": "string"' in dumped or "'type': 'string'" in dumped

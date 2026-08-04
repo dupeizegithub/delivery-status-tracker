@@ -41,3 +41,11 @@ def test_terminal_states_have_no_next():
 
 def test_allowed_next_from_created():
     assert allowed_next("created") == ["picked_up", "failed"]
+
+
+def test_transition_table_covers_every_status():
+    """Adding a status to STATUSES without a transitions entry would make
+    that status silently look terminal (allowed_next → [])."""
+    from app.lifecycle import ALLOWED_TRANSITIONS
+
+    assert set(ALLOWED_TRANSITIONS) == set(STATUSES)

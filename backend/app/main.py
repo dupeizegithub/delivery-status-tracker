@@ -1,14 +1,37 @@
+from datetime import datetime
+from typing import Literal
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from .db import get_pool
-from .lifecycle import STATUSES, allowed_next, is_valid_transition
+from .lifecycle import allowed_next, is_valid_transition
+
+StatusLiteral = Literal[
+    "created", "picked_up", "in_transit", "delivered", "failed"
+]
+
+
+class StatusUpdate(BaseModel):
+    status: StatusLiteral = Field(description="Target lifecycle status")
+
+
+class ShipmentOut(BaseModel):
+    reference: str
+    customer_name: str
+    status: StatusLiteral
+    created_at: datetime
+    updated_at: datetime
+    allowed_next: list[StatusLiteral]
+
 
 app = FastAPI(title="Delivery Status Tracker API")
 
-# The React dev server runs on another port, so the browser treats API calls
-# as cross-origin. Wide-open CORS is fine for a local demo with no auth.
+# Browser traffic from the React app is same-origin via the Vite /api proxy,
+# so CORS is not required for the demo UI path. It stays enabled for callers
+# that hit the API on :8001 from another origin (e.g. a separately hosted
+# frontend during live extension).
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -19,16 +42,12 @@ app.add_middleware(
 SHIPMENT_COLUMNS = "reference, customer_name, status, created_at, updated_at"
 
 
-class StatusUpdate(BaseModel):
-    status: str
-
-
 @app.get("/api/health")
 def health():
     return {"ok": True}
 
 
-@app.get("/api/shipments")
+@app.get("/api/shipments", response_model=list[ShipmentOut])
 def list_shipments():
     with get_pool().connection() as conn:
         rows = conn.execute(
@@ -37,14 +56,21 @@ def list_shipments():
     return [_serialize(r) for r in rows]
 
 
-@app.patch("/api/shipments/{reference}/status")
+@app.patch(
+    "/api/shipments/{reference}/status",
+    response_model=ShipmentOut,
+    responses={
+        404: {"description": "Shipment reference not found"},
+        409: {
+            "description": (
+                "Invalid lifecycle transition, or a concurrent update "
+                "changed the current status"
+            )
+        },
+    },
+)
 def update_status(reference: str, body: StatusUpdate):
     target = body.status
-    if target not in STATUSES:
-        raise HTTPException(
-            status_code=422,
-            detail=f"Unknown status '{target}'. Valid statuses: {', '.join(STATUSES)}.",
-        )
 
     with get_pool().connection() as conn:
         row = conn.execute(
@@ -78,8 +104,8 @@ def update_status(reference: str, body: StatusUpdate):
                 detail=f"Shipment '{reference}' was updated concurrently. Reload and retry.",
             )
 
-        # Same transaction as the UPDATE: history and current status can
-        # never drift apart.
+        # Same transaction as the UPDATE: on the status-update path, history
+        # and current status cannot drift apart.
         conn.execute(
             """
             INSERT INTO shipment_status_events (shipment_id, from_status, to_status)
