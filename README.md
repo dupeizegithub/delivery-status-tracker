@@ -13,8 +13,13 @@ and move them through it — all started with one command.
   Install it, then **launch the Docker Desktop app and wait until it reports
   "Engine running"** (steady whale icon in the menu bar / system tray) —
   installed but not running is the most common trip-up.
-- An internet connection that can reach Docker Hub, PyPI and npm
-  (first start only; later starts are fully offline).
+- **Outbound internet on first start.** The first `docker compose up`
+  downloads images from Docker Hub and packages from PyPI / npm. You need
+  a network that can reach those registries — either open internet, or a
+  **stable VPN that applies to the terminal and to Docker** (not only the
+  browser). If the VPN covers the browser but not the shell/Docker engine,
+  pulls and installs can fail with TLS timeouts. After the first successful
+  start, later runs work fully offline.
 
 Nothing else is needed — no local Python, Node, or PostgreSQL.
 
@@ -61,10 +66,10 @@ docker compose down -v && docker compose up
   change the left-hand side of the `ports:` mapping in `docker-compose.yml`.
 - **First start looks stuck** — it is almost certainly downloading images /
   npm packages. Watch progress with `docker compose logs -f`.
-- **Image pulls time out (`TLS handshake timeout`)** — your network cannot
-  reach Docker Hub (common behind restrictive networks/firewalls). Connect
-  via a network or VPN with unrestricted access and re-run
-  `docker compose up`.
+- **Image / package downloads time out (`TLS handshake timeout`)** — the
+  machine cannot reach Docker Hub, PyPI, or npm. Use open internet or a
+  stable VPN, and confirm it reaches the **terminal and Docker** (a
+  browser-only proxy is not enough). Then re-run `docker compose up`.
 
 ## The status lifecycle
 
